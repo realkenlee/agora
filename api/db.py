@@ -3,6 +3,7 @@
 from __future__ import annotations
 import json
 import os
+import ssl
 from typing import Any, Optional
 import asyncpg
 
@@ -16,11 +17,16 @@ async def _init_conn(conn):
 
 async def init_pool():
     global _pool
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
     _pool = await asyncpg.create_pool(
         os.environ["DATABASE_URL"],
         min_size=2,
         max_size=10,
         command_timeout=30,
+        statement_cache_size=0,  # required for Supabase PgBouncer pooler
+        ssl=ssl_ctx,
         init=_init_conn,
     )
 
