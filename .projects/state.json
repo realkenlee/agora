@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "providers": {
+    "railway": {
+      "name": "Railway"
+    },
+    "supabase": {
+      "name": "Supabase"
+    }
+  },
+  "resources": {
+    "supabase-project": {
+      "name": "supabase-project",
+      "providerName": "Supabase",
+      "serviceId": "project"
+    }
+  }
+}
