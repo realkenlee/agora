@@ -17,6 +17,13 @@ _LLM_API_KEY   = os.environ.get("LLM_API_KEY", "")
 _TEXT_MODEL    = os.environ.get("LLM_MODEL", "llama-3.1-8b-instant")
 _VISION_MODEL  = os.environ.get("VISION_MODEL", "llama-3.2-11b-vision-preview")
 
+# Fallback models tried in order when primary is rate-limited
+_TEXT_FALLBACKS = [
+    "google/gemma-3-27b-it:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "google/gemma-3-12b-it:free",
+]
+
 _CATEGORIES = [
     "electronics", "electronics/phones", "electronics/laptops",
     "clothing", "furniture", "vehicles", "sports", "books",
@@ -73,16 +80,26 @@ async def generate_listing_draft(
         categories=", ".join(_CATEGORIES),
     )
 
-    response = await _client().chat.completions.create(
-        model=_TEXT_MODEL,
-        messages=[
-            {"role": "system", "content": _GENERATE_SYSTEM},
-            {"role": "user",   "content": prompt},
-        ],
-        response_format={"type": "json_object"},
-        temperature=0.3,
-        max_tokens=1024,
-    )
+    from openai import RateLimitError, NotFoundError
+    last_err = None
+    for model in [_TEXT_MODEL] + _TEXT_FALLBACKS:
+        try:
+            response = await _client().chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": _GENERATE_SYSTEM},
+                    {"role": "user",   "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.3,
+                max_tokens=1024,
+            )
+            break
+        except (RateLimitError, NotFoundError) as e:
+            last_err = e
+            continue
+    else:
+        raise last_err
 
     text = response.choices[0].message.content.strip()
     # Strip accidental markdown fences
