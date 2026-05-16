@@ -220,3 +220,10 @@ CREATE TABLE IF NOT EXISTS telegram_accounts (
     first_name TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS ai_usage_log (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    endpoint TEXT NOT NULL,
+    user_id UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
