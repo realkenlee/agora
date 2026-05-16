@@ -752,6 +752,7 @@ async def _do_generate(draft_id, user_id, photo_urls, description, price_hint, l
                 f"Your listing is ready!\n\n\"{title}\" — ${price:.0f}\n\nReply YES to publish, or NO to cancel."
             )
     except Exception as e:
+        print(f"[generate] ERROR draft {draft_id}: {type(e).__name__}: {e}")
         await db.execute(
             "UPDATE listing_drafts SET status='failed', error=$1, updated_at=NOW() WHERE id=$2",
             str(e)[:500], draft_id,
