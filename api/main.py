@@ -109,6 +109,23 @@ async def send_telegram(chat_id: int, text: str) -> None:
 async def lifespan(app: FastAPI):
     await db.init_pool()
     await db.execute(
+        """CREATE TABLE IF NOT EXISTS listing_drafts (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            user_id UUID NOT NULL REFERENCES users(id),
+            status TEXT NOT NULL DEFAULT 'processing',
+            description TEXT,
+            price_hint FLOAT,
+            draft JSONB,
+            error TEXT,
+            telegram_chat_id BIGINT,
+            brand_candidates JSONB,
+            confirmed_brand TEXT,
+            photo_urls JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )"""
+    )
+    await db.execute(
         "ALTER TABLE listing_drafts ADD COLUMN IF NOT EXISTS telegram_chat_id BIGINT"
     )
     await db.execute(

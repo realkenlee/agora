@@ -197,3 +197,26 @@ $$;
 CREATE TRIGGER listings_updated_at
     BEFORE UPDATE ON listings
     FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE TABLE IF NOT EXISTS listing_drafts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id),
+    status TEXT NOT NULL DEFAULT 'processing',
+    description TEXT,
+    price_hint FLOAT,
+    draft JSONB,
+    error TEXT,
+    telegram_chat_id BIGINT,
+    brand_candidates JSONB,
+    confirmed_brand TEXT,
+    photo_urls JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS telegram_accounts (
+    chat_id BIGINT PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id),
+    first_name TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
