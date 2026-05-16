@@ -911,7 +911,7 @@ async def telegram_webhook(request: Request):
     # ── Brand reply (if awaiting_brand draft exists and no photo in message) ───
     if not photos:
         awaiting = await db.fetchrow(
-            "SELECT id, brand_candidates, description, price_hint, location_text, photo_urls "
+            "SELECT id, brand_candidates, description, price_hint, photo_urls "
             "FROM listing_drafts WHERE user_id=$1 AND status='awaiting_brand' AND telegram_chat_id=$2 "
             "ORDER BY created_at DESC LIMIT 1",
             user_id, chat_id,
@@ -955,7 +955,7 @@ async def telegram_webhook(request: Request):
                 stored_urls,
                 awaiting["description"],
                 awaiting["price_hint"],
-                awaiting["location_text"],
+                None,
                 confirmed_brand=confirmed_brand,
             ))
             return {"ok": True}
