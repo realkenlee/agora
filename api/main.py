@@ -1030,14 +1030,11 @@ async def telegram_webhook(request: Request):
             user_id, description, chat_id,
             json.dumps(photo_urls_list), json.dumps(candidates),
         )
-        if candidates:
+        if candidates and confidence == "MEDIUM":
             options = "\n".join(f"{i+1}. {b}" for i, b in enumerate(candidates))
-            if confidence == "MEDIUM":
-                msg = f"I think this might be one of these brands:\n{options}\n\nReply 1–{len(candidates)} to confirm, type the brand name, or SKIP to let me decide."
-            else:
-                msg = f"What brand is this?\n{options}\n\nReply 1–{len(candidates)}, type the brand name, or SKIP."
+            msg = f"I think this might be one of these brands:\n{options}\n\nReply 1–{len(candidates)} to confirm, type the brand name, or SKIP to let me decide."
         else:
-            msg = "What brand is this? Type the brand name (e.g. 'Nike', 'Apple') or SKIP to let me figure it out."
+            msg = "What brand is this? Type the name (e.g. Nike, Apple) or SKIP to let me figure it out."
         await reply(msg)
 
     return {"ok": True}

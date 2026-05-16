@@ -94,6 +94,9 @@ def _extract_brand_candidates(vision_caption: str, search_results: list) -> tupl
         "perfect", "excellent", "mint", "fair", "poor", "image", "photo",
         "shows", "please", "contact", "message", "offer", "make", "local",
         "cash", "payment", "delivery", "pickup", "meet", "inch", "inches",
+        "marketplace", "items", "your", "their", "these", "those", "here",
+        "listing", "listings", "seller", "buyer", "deal", "deals", "lot",
+        "set", "bundle", "used", "brand", "type", "style", "version",
     }
 
     # Per-result word spread (breadth beats frequency — one result mentioning Nike 10x ≠ 4 results)
