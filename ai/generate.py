@@ -7,7 +7,7 @@ from openai import AsyncOpenAI
 
 _LLM_BASE_URL  = os.environ.get("LLM_BASE_URL", "https://openrouter.ai/api/v1")
 _LLM_API_KEY   = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("LLM_API_KEY", "")
-_TEXT_MODEL    = os.environ.get("LLM_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+_TEXT_MODEL    = os.environ.get("LLM_MODEL", "deepseek/deepseek-v4-flash:free")
 _VISION_MODEL  = os.environ.get("VISION_MODEL", "nvidia/nemotron-nano-12b-v2-vl:free")
 
 _TEXT_FALLBACKS = [
