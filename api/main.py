@@ -111,10 +111,13 @@ async def lifespan(app: FastAPI):
     await db.execute(
         """CREATE TABLE IF NOT EXISTS listing_drafts (
             id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-            user_id UUID NOT NULL REFERENCES users(id),
+            user_id UUID REFERENCES users(id),
             status TEXT NOT NULL DEFAULT 'processing',
             description TEXT,
             price_hint FLOAT,
+            location_lat DOUBLE PRECISION,
+            location_lng DOUBLE PRECISION,
+            location_text TEXT,
             draft JSONB,
             error TEXT,
             telegram_chat_id BIGINT,
