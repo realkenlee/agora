@@ -145,6 +145,14 @@ async def lifespan(app: FastAPI):
             created_at TIMESTAMPTZ DEFAULT NOW()
         )"""
     )
+    await db.execute(
+        """CREATE TABLE IF NOT EXISTS ai_usage_log (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            endpoint TEXT NOT NULL,
+            user_id UUID REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )"""
+    )
     yield
     await db.close_pool()
 
