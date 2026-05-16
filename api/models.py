@@ -108,6 +108,8 @@ class ListingResponse(BaseModel):
     created_at:       datetime
     updated_at:       datetime
     # min_price intentionally excluded — private
+    # agent-readable state: valid next actions, key metadata
+    state:            Optional[dict] = None
 
 
 # ── Search ────────────────────────────────────────────────────────────────────
@@ -165,6 +167,7 @@ class OfferResponse(BaseModel):
     created_at:      datetime
     expires_at:      datetime
     responded_at:    Optional[datetime]
+    state:           Optional[dict] = None
 
 
 # ── Messages ──────────────────────────────────────────────────────────────────
@@ -187,9 +190,9 @@ class MessageResponse(BaseModel):
 
 class GenerateListingRequest(BaseModel):
     """Casual description → structured listing draft."""
-    description:  str
+    description:  str             = ""
     price_hint:   Optional[float] = None
-    location:     Optional[str]   = None
+    location:     Optional[Location] = None
     photo_urls:   list[str]       = []
 
 
@@ -202,5 +205,30 @@ class GenerateListingResponse(BaseModel):
     category_id:      str
     attributes:       dict
     price_negotiable: bool
-    # Plain-English explanation of what Claude inferred
     reasoning:        str
+
+
+class GenerateJobResponse(BaseModel):
+    """Returned immediately from POST /ai/generate — processing happens async."""
+    draft_id: UUID
+    status:   str = "processing"
+
+
+class DraftResponse(BaseModel):
+    id:         UUID
+    status:     str
+    draft:      Optional[dict]     = None
+    error:      Optional[str]      = None
+    created_at: datetime
+
+
+class NotificationResponse(BaseModel):
+    id:          UUID
+    type:        str
+    title:       str
+    body:        str
+    action_type: str
+    action_url:  Optional[str]     = None
+    payload:     dict
+    read_at:     Optional[datetime] = None
+    created_at:  datetime

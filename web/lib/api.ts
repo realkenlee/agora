@@ -1,6 +1,6 @@
 import type { Listing, Offer, Message, GeneratedListing } from './types'
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://agora-production-fb42.up.railway.app'
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('agora_token') : null
@@ -51,10 +51,22 @@ export const api = {
   },
 
   ai: {
-    generate: (description: string, price_hint?: number, location?: string, photo_urls?: string[]) =>
-      req<GeneratedListing>('/ai/generate', {
+    generate: (body: { description?: string; price_hint?: number; location?: { lat: number; lng: number; text: string }; photo_urls?: string[] }) =>
+      req<{ draft_id: string; status: string }>('/ai/generate', {
         method: 'POST',
-        body: JSON.stringify({ description, price_hint, location, photo_urls }),
+        body: JSON.stringify(body),
       }),
   },
+
+  drafts: {
+    get: (id: string) => req<import('./types').Draft>(`/drafts/${id}`),
+    publish: (id: string) => req<import('./types').Listing>(`/drafts/${id}/publish`, { method: 'POST' }),
+  },
+
+  notifications: {
+    list: () => req<import('./types').Notification[]>('/me/notifications'),
+    read: (id: string) => req<void>(`/me/notifications/${id}/read`, { method: 'PATCH' }),
+  },
+
+  usage: () => req<import('./types').UsageInfo>('/me/usage'),
 }

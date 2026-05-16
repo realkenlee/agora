@@ -1,10 +1,13 @@
-.projects/cache
-.projects/vault
-.env
-.env.local
 .venv/
 __pycache__/
 *.pyc
 .DS_Store
 web/.next/
 web/node_modules/
+
+.vercel
+
+.projects/cache
+.projects/vault
+.env
+.env.local

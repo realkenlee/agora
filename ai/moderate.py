@@ -13,6 +13,15 @@ _LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.groq.com/openai/v1")
 _LLM_API_KEY  = os.environ.get("LLM_API_KEY", "")
 _TEXT_MODEL   = os.environ.get("LLM_MODEL", "llama-3.1-8b-instant")
 
+_FALLBACKS = [
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "nvidia/nemotron-nano-9b-v2:free",
+    "openai/gpt-oss-20b:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free",
+    "qwen/qwen3-coder:free",
+]
+
 _SYSTEM = """You are a marketplace content moderator. Evaluate listings quickly and accurately.
 Return ONLY valid JSON — no prose, no markdown fences."""
 
@@ -52,25 +61,27 @@ async def moderate_listing(title: str, description: str, category: str | None) -
     if quick:
         return quick
 
-    response = await _client().chat.completions.create(
-        model=_TEXT_MODEL,
-        messages=[
-            {"role": "system", "content": _SYSTEM},
-            {"role": "user", "content": _PROMPT.format(
-                title=title, description=description,
-                category=category or "unspecified", prohibited=_PROHIBITED,
-            )},
-        ],
-        response_format={"type": "json_object"},
-        temperature=0.1,
-        max_tokens=256,
-    )
+    from openai import APIStatusError
+    messages = [
+        {"role": "system", "content": _SYSTEM},
+        {"role": "user", "content": _PROMPT.format(
+            title=title, description=description,
+            category=category or "unspecified", prohibited=_PROHIBITED,
+        )},
+    ]
+    for model in [_TEXT_MODEL] + _FALLBACKS:
+        try:
+            response = await _client().chat.completions.create(
+                model=model, messages=messages, temperature=0.1, max_tokens=256,
+            )
+            text = (response.choices[0].message.content or "").strip()
+            if "{" in text and "}" in text:
+                text = text[text.index("{"):text.rindex("}")+1]
+            return json.loads(text)
+        except (APIStatusError, json.JSONDecodeError, ValueError):
+            continue
 
-    text = response.choices[0].message.content.strip()
-    try:
-        return json.loads(text)
-    except Exception:
-        return {"allowed": True, "reason": "", "flags": ["parse_error"], "confidence": 0.5}
+    return {"allowed": True, "reason": "", "flags": ["moderation_unavailable"], "confidence": 0.5}
 
 
 def _quick_check(title: str, description: str) -> dict | None:

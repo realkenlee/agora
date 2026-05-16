@@ -71,4 +71,31 @@ export interface GeneratedListing {
   attributes: Record<string, string>
   price_negotiable: boolean
   reasoning: string
+  photo_urls?: string[]
+}
+
+export interface Draft {
+  id: string
+  status: 'processing' | 'ready' | 'failed' | 'published'
+  draft: GeneratedListing | null
+  error: string | null
+  created_at: string
+}
+
+export interface Notification {
+  id: string
+  type: string
+  title: string
+  body: string
+  action_type: 'fyi' | 'approve'
+  action_url: string | null
+  payload: Record<string, string>
+  read_at: string | null
+  created_at: string
+}
+
+export interface UsageInfo {
+  used: number
+  limit: number
+  remaining: number
 }

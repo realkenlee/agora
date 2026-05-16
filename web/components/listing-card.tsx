@@ -3,7 +3,7 @@ import { MapPin, Bot } from 'lucide-react'
 import { cn, formatPrice, formatRelativeTime, CONDITION_LABELS, CONDITION_COLORS } from '@/lib/utils'
 import type { Listing } from '@/lib/types'
 
-export default function ListingCard({ listing }: { listing: Listing }) {
+export default function ListingCard({ listing, distanceMi }: { listing: Listing; distanceMi?: number }) {
   const photo = listing.photos[0]
 
   return (
@@ -51,7 +51,14 @@ export default function ListingCard({ listing }: { listing: Listing }) {
           <div className="flex items-center gap-1 text-gray-400 text-xs">
             <MapPin size={11} />
             <span className="truncate">{listing.location.text}</span>
-            <span className="ml-auto shrink-0">{formatRelativeTime(listing.created_at)}</span>
+            {distanceMi != null && (
+              <span className="ml-auto shrink-0 text-indigo-500 font-medium">
+                {distanceMi < 0.1 ? '<0.1' : distanceMi.toFixed(1)} mi
+              </span>
+            )}
+            {distanceMi == null && (
+              <span className="ml-auto shrink-0">{formatRelativeTime(listing.created_at)}</span>
+            )}
           </div>
         </div>
       </div>

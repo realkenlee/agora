@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { Search, SlidersHorizontal, X } from 'lucide-react'
+import { useState, useCallback, useEffect } from 'react'
+import { Search, SlidersHorizontal, X, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import ListingCard from '@/components/listing-card'
@@ -23,29 +23,39 @@ export default function BrowsePage() {
   const [query, setQuery]         = useState('')
   const [category, setCategory]   = useState('')
   const [maxPrice, setMaxPrice]   = useState('')
-  const [results, setResults]     = useState<Listing[]>([])
+  const [results, setResults]     = useState<Array<{ listing: Listing; distance_mi: number | null }>>([])
   const [loading, setLoading]     = useState(false)
   const [searched, setSearched]   = useState(false)
   const [showFilters, setShowFilters] = useState(false)
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
+
+  useEffect(() => {
+    navigator.geolocation?.getCurrentPosition(pos =>
+      setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+    )
+  }, [])
 
   const search = useCallback(async (q = query, cat = category, max = maxPrice) => {
-    if (!q.trim()) return
     setLoading(true)
     setSearched(true)
     try {
       const res = await api.search({
-        query: q,
+        query: q || 'everything',
         category_id: cat || undefined,
         max_price: max ? parseFloat(max) : undefined,
+        location: userLocation ?? undefined,
+        radius_miles: userLocation ? 25 : undefined,
         limit: 24,
       })
-      setResults(res.results.map(r => r.listing))
+      setResults(res.results)
     } catch {
       setResults([])
     } finally {
       setLoading(false)
     }
-  }, [query, category, maxPrice])
+  }, [query, category, maxPrice, userLocation])
+
+  useEffect(() => { search('', '', '') }, []) // load all listings on mount
 
   function handleKey(e: React.KeyboardEvent) {
     if (e.key === 'Enter') search()
@@ -75,7 +85,7 @@ export default function BrowsePage() {
             </div>
             <button
               onClick={() => search()}
-              disabled={!query.trim()}
+              disabled={loading}
               className="bg-indigo-600 text-white px-5 rounded-2xl font-semibold text-sm disabled:opacity-40"
             >
               Search
@@ -153,10 +163,17 @@ export default function BrowsePage() {
 
         {!loading && results.length > 0 && (
           <>
-            <p className="text-sm text-gray-400 mb-4">{results.length} results for &ldquo;{query}&rdquo;</p>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm text-gray-400">{results.length} results for &ldquo;{query}&rdquo;</p>
+              {userLocation && (
+                <span className="text-xs text-indigo-500 flex items-center gap-1">
+                  <MapPin size={11} /> Near you
+                </span>
+              )}
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {results.map(listing => (
-                <ListingCard key={listing.id} listing={listing} />
+              {results.map(({ listing, distance_mi }) => (
+                <ListingCard key={listing.id} listing={listing} distanceMi={distance_mi ?? undefined} />
               ))}
             </div>
           </>
