@@ -54,11 +54,11 @@ _WEB_URL  = os.environ.get("WEB_URL", "https://tryagora.vercel.app")
 
 # ── Photo storage (Tigris / S3-compatible) ────────────────────────────────────
 
-_S3_BUCKET   = os.environ.get("AGORA_PHOTOS_BUCKET_NAME", "")
-_S3_ENDPOINT = os.environ.get("AGORA_PHOTOS_ENDPOINT", "")
-_S3_KEY_ID   = os.environ.get("AGORA_PHOTOS_ACCESS_KEY_ID", "")
-_S3_SECRET   = os.environ.get("AGORA_PHOTOS_SECRET_ACCESS_KEY", "")
-_S3_REGION   = os.environ.get("AGORA_PHOTOS_REGION", "auto")
+_S3_BUCKET   = os.environ.get("RAILWAY_BUCKET_BUCKET_NAME", "")
+_S3_ENDPOINT = os.environ.get("RAILWAY_BUCKET_ENDPOINT", "")
+_S3_KEY_ID   = os.environ.get("RAILWAY_BUCKET_ACCESS_KEY_ID", "")
+_S3_SECRET   = os.environ.get("RAILWAY_BUCKET_SECRET_ACCESS_KEY", "")
+_S3_REGION   = os.environ.get("RAILWAY_BUCKET_REGION", "auto")
 _PHOTO_MAX   = 1200
 
 def _s3_client():

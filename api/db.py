@@ -21,7 +21,7 @@ async def init_pool():
     ssl_ctx.check_hostname = False
     ssl_ctx.verify_mode = ssl.CERT_NONE
     _pool = await asyncpg.create_pool(
-        os.environ.get("SUPABASE_POOLER_URL") or os.environ["DATABASE_URL"],
+        os.environ.get("SUPABASE_POOLER_URL") or os.environ.get("DATABASE_URL") or "",
         min_size=2,
         max_size=10,
         command_timeout=30,
