@@ -14,7 +14,7 @@ _TEXT_FALLBACKS = [
     "meta-llama/llama-3.2-3b-instruct:free",
     "qwen/qwen3-8b:free",
     "mistralai/mistral-7b-instruct:free",
-    "google/gemma-3-4b-it:free",
+    "deepseek/deepseek-r1-distill-qwen-7b:free",
 ]
 
 _CATEGORIES = [
