@@ -90,6 +90,7 @@ Return this JSON:
   "category_id": <best matching category>,
   "attributes": {{"<relevant_key>": "<value>", ...}},
   "price_negotiable": <true if condition good or below>,
+  "price_confidence": <"high" if web research confirms price, "medium" if estimated from similar items, "low" if guessing>,
   "reasoning": "One sentence on how you priced this and identified the brand"
 }}"""
 
@@ -176,6 +177,7 @@ async def generate_listing_draft(
 
     draft["suggested_price"] = float(draft.get("suggested_price", 0))
     draft.setdefault("price_negotiable", True)
+    draft.setdefault("price_confidence", "medium")
     draft.setdefault("reasoning", "")
     cat = draft.get("category_id", "other")
     if not isinstance(cat, str) or cat not in _CATEGORIES:

@@ -99,6 +99,45 @@ async def upload_photo(image_bytes: bytes) -> str | None:
         return None
 
 
+def _photo_quality_error(image_bytes: bytes) -> str | None:
+    """Returns a user-facing error if photo is unusable, None if ok."""
+    try:
+        img = Image.open(io.BytesIO(image_bytes)).convert("L")
+        w, h = img.size
+        if w < 300 or h < 300:
+            return "Photo is too small. Please send a closer, higher-res shot."
+        # Laplacian variance — proxy for sharpness. Pure-PIL, no numpy needed.
+        from PIL import ImageFilter
+        edges = img.filter(ImageFilter.FIND_EDGES)
+        pixels = list(edges.getdata())
+        n = len(pixels)
+        mean = sum(pixels) / n
+        variance = sum((p - mean) ** 2 for p in pixels) / n
+        if variance < 80:
+            return "Photo looks blurry or too dark. Please retake in better light."
+    except Exception:
+        pass
+    return None
+
+
+async def _find_duplicate(user_id, title: str, description: str) -> dict | None:
+    """Returns an existing active listing if a very similar one already exists."""
+    try:
+        vec = await embed_text(f"{title} {description}")
+        embedding_str = "[" + ",".join(str(x) for x in vec) + "]"
+        row = await db.fetchrow(
+            """SELECT id, title, 1 - (embedding <=> $1::vector) AS similarity
+               FROM listings
+               WHERE seller_id = $2 AND status = 'active'
+               AND 1 - (embedding <=> $1::vector) > 0.88
+               ORDER BY similarity DESC LIMIT 1""",
+            embedding_str, user_id,
+        )
+        return dict(row) if row else None
+    except Exception:
+        return None
+
+
 async def send_telegram(chat_id: int, text: str) -> None:
     if not _TG_TOKEN:
         return
@@ -755,17 +794,39 @@ async def _do_generate(draft_id, user_id, photo_urls, description, price_hint, l
                 "condition": draft_data["condition"],
                 "category_id": draft_data["category_id"],
             })
-        # Notify seller via Telegram if this draft was initiated there
+
+        # Telegram drafts auto-publish — no YES/NO confirmation needed
         tg_row = await db.fetchrow(
             "SELECT telegram_chat_id FROM listing_drafts WHERE id=$1", draft_id
         )
         if tg_row and tg_row["telegram_chat_id"]:
-            price = draft_data["suggested_price"]
+            chat_id = tg_row["telegram_chat_id"]
             title = draft_data["title"]
-            await send_telegram(
-                tg_row["telegram_chat_id"],
-                f"Your listing is ready!\n\n\"{title}\" — ${price:.0f}\n\nReply YES to publish, or NO to cancel."
-            )
+            price = draft_data["suggested_price"]
+            confidence = draft_data.get("price_confidence", "medium")
+
+            # Duplicate check before publishing
+            dup = await _find_duplicate(user_id, title, draft_data.get("description", ""))
+            if dup:
+                await send_telegram(
+                    chat_id,
+                    f"Heads up — you already have a similar listing active:\n"
+                    f"\"{dup['title']}\"\n\n"
+                    f"Publishing anyway as \"{title}\" — ${price:.0f}.\n"
+                    f"Reply UNDO to remove it."
+                )
+            else:
+                confidence_note = "" if confidence == "high" else " (estimated)" if confidence == "medium" else " (rough estimate — adjust if needed)"
+                await send_telegram(
+                    chat_id,
+                    f"Live: \"{title}\" — ${price:.0f}{confidence_note}\n"
+                    f"Reply UNDO to take it down."
+                )
+
+            listing = await _publish_draft_internal(draft_id, user_id)
+            if listing:
+                url = f"{_WEB_URL}/listings/{listing['id']}"
+                await send_telegram(chat_id, url)
     except Exception as e:
         print(f"[generate] ERROR draft {draft_id}: {type(e).__name__}: {e}")
         await db.execute(
@@ -862,19 +923,19 @@ async def telegram_webhook(request: Request):
 
     user_id = tg_row["user_id"]
 
-    # ── YES / NO (publish or cancel ready draft) ───────────────────────────────
-    if text.upper() in ("YES", "Y", "PUBLISH"):
-        draft = await db.fetchrow(
-            "SELECT id FROM listing_drafts WHERE user_id=$1 AND status='ready' AND telegram_chat_id=$2 "
-            "ORDER BY created_at DESC LIMIT 1",
-            user_id, chat_id,
+    # ── UNDO — take down the most recently published listing ──────────────────
+    if text.upper() == "UNDO":
+        listing = await db.fetchrow(
+            """SELECT id, title FROM listings
+               WHERE seller_id=$1 AND status='active'
+               ORDER BY created_at DESC LIMIT 1""",
+            user_id,
         )
-        if not draft:
-            await reply("No listing ready to publish. Send me a photo of what you want to sell!")
+        if not listing:
+            await reply("Nothing to undo.")
             return {"ok": True}
-        listing = await _publish_draft_internal(draft["id"], user_id)
-        url = f"{_WEB_URL}/listings/{listing['id']}" if listing else _WEB_URL
-        await reply(f"You're live!\n{url}")
+        await db.execute("UPDATE listings SET status='removed' WHERE id=$1", listing["id"])
+        await reply(f"Taken down: \"{listing['title']}\".")
         return {"ok": True}
 
     if text.upper() in ("NO", "N", "CANCEL"):
@@ -962,6 +1023,13 @@ async def telegram_webhook(request: Request):
         await reply("Send me a photo of what you want to sell, with a short description!")
         return {"ok": True}
 
+    # Quality gate — reject before spending any LLM calls
+    if photo_bytes:
+        quality_err = _photo_quality_error(photo_bytes)
+        if quality_err:
+            await reply(quality_err)
+            return {"ok": True}
+
     description = text or "Item for sale"
 
     # Upload photo and run vision analysis — brand is inferred from the photo by the LLM
@@ -986,7 +1054,7 @@ async def telegram_webhook(request: Request):
     asyncio.create_task(_generate_draft_background(
         draft_id, user_id, photo_urls_list, description, None, None,
     ))
-    await reply("Got it! Writing your listing now — I'll message you in about a minute.")
+    await reply("On it — I'll post it and send you the link in about a minute.")
     return {"ok": True}
 
 
