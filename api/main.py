@@ -88,7 +88,10 @@ async def upload_photo(image_bytes: bytes) -> str | None:
             Bucket=_S3_BUCKET, Key=key, Body=buf,
             ContentType="image/jpeg",
         )
-        return f"https://agora-production-fb42.up.railway.app/photos/{key}"
+        base = os.environ.get("RAILWAY_PUBLIC_DOMAIN") or os.environ.get("RAILWAY_HOSTING_URL", "")
+        if base and not base.startswith("http"):
+            base = f"https://{base}"
+        return f"{base}/photos/{key}"
     try:
         return await loop.run_in_executor(None, _upload)
     except Exception as e:
