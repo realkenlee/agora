@@ -878,12 +878,18 @@ async def telegram_webhook(request: Request):
         return {"ok": True}
 
     if text.upper() in ("NO", "N", "CANCEL"):
-        await db.execute(
-            "UPDATE listing_drafts SET status='failed', error='Cancelled by seller', updated_at=NOW() "
-            "WHERE user_id=$1 AND status='ready' AND telegram_chat_id=$2",
+        cancelled = await db.fetchval(
+            "WITH updated AS ("
+            "  UPDATE listing_drafts SET status='failed', error='Cancelled by seller', updated_at=NOW()"
+            "  WHERE user_id=$1 AND status IN ('processing','ready') AND telegram_chat_id=$2"
+            "  RETURNING id"
+            ") SELECT COUNT(*) FROM updated",
             user_id, chat_id,
         )
-        await reply("Listing cancelled. Send me a photo when you're ready to sell something.")
+        if cancelled:
+            await reply("Cancelled. Send me a photo when you're ready to sell something.")
+        else:
+            await reply("Nothing in progress to cancel. Send me a photo to start a listing.")
         return {"ok": True}
 
     # ── ACCEPT / DECLINE (offer responses) ─────────────────────────────────────
@@ -926,6 +932,14 @@ async def telegram_webhook(request: Request):
         return {"ok": True}
 
     # ── New listing: photo required ────────────────────────────────────────────
+    # Sending a new photo always restarts — cancel whatever was in flight
+    if photos:
+        await db.execute(
+            "UPDATE listing_drafts SET status='failed', error='Superseded by new photo', updated_at=NOW() "
+            "WHERE user_id=$1 AND status IN ('processing','ready') AND telegram_chat_id=$2",
+            user_id, chat_id,
+        )
+
     photo_bytes: bytes | None = None
     if photos and _TG_TOKEN:
         largest = photos[-1]["file_id"]
