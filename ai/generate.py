@@ -3,19 +3,60 @@ import asyncio
 import base64
 import json
 import os
+import httpx
 from openai import AsyncOpenAI
 
 _LLM_BASE_URL  = os.environ.get("LLM_BASE_URL", "https://openrouter.ai/api/v1")
 _LLM_API_KEY   = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("LLM_API_KEY", "")
-_TEXT_MODEL    = os.environ.get("LLM_MODEL", "deepseek/deepseek-v4-flash:free")
-_VISION_MODEL  = os.environ.get("VISION_MODEL", "nvidia/nemotron-nano-12b-v2-vl:free")
+_TEXT_MODEL    = os.environ.get("LLM_MODEL", "")
+_VISION_MODEL  = os.environ.get("VISION_MODEL", "")
 
-_TEXT_FALLBACKS = [
+# Seed fallbacks — refreshed dynamically at startup via refresh_free_models()
+_TEXT_FALLBACKS: list[str] = [
+    "deepseek/deepseek-v4-flash:free",
     "meta-llama/llama-3.2-3b-instruct:free",
     "qwen/qwen3-coder:free",
-    "deepseek/deepseek-v4-flash:free",
     "google/gemma-4-26b-a4b-it:free",
 ]
+_VISION_FALLBACKS: list[str] = [
+    "nvidia/nemotron-nano-12b-v2-vl:free",
+]
+
+
+async def refresh_free_models() -> None:
+    """Query OpenRouter for currently available free models and update the lists."""
+    global _TEXT_MODEL, _VISION_MODEL, _TEXT_FALLBACKS, _VISION_FALLBACKS
+    if not _LLM_API_KEY or "openrouter" not in _LLM_BASE_URL:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                "https://openrouter.ai/api/v1/models",
+                headers={"Authorization": f"Bearer {_LLM_API_KEY}"},
+            )
+            models = r.json().get("data", [])
+        free_text = [
+            m["id"] for m in models
+            if ":free" in m["id"]
+            and m.get("context_length", 0) >= 4096
+            and "vl" not in m["id"] and "vision" not in m["id"]
+        ]
+        free_vision = [
+            m["id"] for m in models
+            if ":free" in m["id"]
+            and ("vl" in m["id"] or "vision" in m["id"])
+        ]
+        if free_text:
+            _TEXT_FALLBACKS = free_text[:8]
+            if not _TEXT_MODEL:
+                _TEXT_MODEL = free_text[0]
+        if free_vision:
+            _VISION_FALLBACKS = free_vision[:4]
+            if not _VISION_MODEL:
+                _VISION_MODEL = free_vision[0]
+        print(f"[models] text={_TEXT_MODEL} vision={_VISION_MODEL} fallbacks={len(_TEXT_FALLBACKS)}")
+    except Exception as e:
+        print(f"[models] refresh failed: {e} — using seed list")
 
 _CATEGORIES = [
     "electronics", "electronics/phones", "electronics/laptops",
@@ -194,7 +235,8 @@ async def generate_listing_draft(
 
     from openai import APIStatusError, APITimeoutError
     last_err = None
-    for model in [_TEXT_MODEL] + _TEXT_FALLBACKS:
+    models_to_try = [m for m in ([_TEXT_MODEL] + _TEXT_FALLBACKS) if m]
+    for model in models_to_try:
         try:
             response = await _client().chat.completions.create(
                 model=model,

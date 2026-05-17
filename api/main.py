@@ -40,6 +40,7 @@ from api.models import (
     GenerateJobResponse, DraftResponse, NotificationResponse,
     UserSummary, Location,
 )
+from ai import generate
 from ai.generate import generate_listing_draft, analyze_photos, analyze_brand
 from ai.embed import embed_text
 from ai.moderate import moderate_listing
@@ -108,6 +109,7 @@ async def send_telegram(chat_id: int, text: str) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.init_pool()
+    await generate.refresh_free_models()
     await db.execute(
         """CREATE TABLE IF NOT EXISTS listing_drafts (
             id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
