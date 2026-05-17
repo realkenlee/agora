@@ -9,9 +9,9 @@ import json
 import os
 from openai import AsyncOpenAI
 
-_LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.groq.com/openai/v1")
-_LLM_API_KEY  = os.environ.get("LLM_API_KEY", "")
-_TEXT_MODEL   = os.environ.get("LLM_MODEL", "llama-3.1-8b-instant")
+_LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://openrouter.ai/api/v1")
+_LLM_API_KEY  = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("LLM_API_KEY", "")
+_TEXT_MODEL   = os.environ.get("LLM_MODEL", "meta-llama/llama-3.2-3b-instruct:free")
 
 _FALLBACKS = [
     "meta-llama/llama-3.2-3b-instruct:free",

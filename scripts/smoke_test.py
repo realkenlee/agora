@@ -13,6 +13,7 @@ Exit 1 = at least one check failed.
 import argparse
 import asyncio
 import json
+import os
 import sys
 import time
 from typing import Any, Optional
@@ -24,7 +25,7 @@ import httpx
 MARCUS_TOKEN = "381803c8-0750-4828-a94e-ba62ed2f637a"  # seller
 SARAH_TOKEN  = "f38ab1ea-6e75-4c73-8f10-68cb039113e0"  # buyer
 
-DEFAULT_URL  = "https://agora-production-fb42.up.railway.app"
+DEFAULT_URL  = os.environ.get("AGORA_API_URL", "https://agora-production-2bbb.up.railway.app")
 
 # ── Colours ────────────────────────────────────────────────────────────────────
 GREEN  = "\033[32m"

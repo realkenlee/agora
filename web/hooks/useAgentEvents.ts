@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://agora-production-fb42.up.railway.app'
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://agora-production-2bbb.up.railway.app'
 
 export type AgentEventMap = {
   draft_ready?:     (data: { draft_id: string; title: string; suggested_price: number; condition: string; category_id: string }) => void

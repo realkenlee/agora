@@ -1,6 +1,9 @@
 {
   "version": 1,
   "providers": {
+    "openrouter": {
+      "name": "OpenRouter"
+    },
     "railway": {
       "name": "Railway"
     },
@@ -9,6 +12,31 @@
     }
   },
   "resources": {
+    "openrouter-api": {
+      "name": "openrouter-api",
+      "providerName": "OpenRouter",
+      "serviceId": "api"
+    },
+    "railway-bucket": {
+      "name": "railway-bucket",
+      "providerName": "Railway",
+      "serviceId": "bucket"
+    },
+    "railway-hosting": {
+      "name": "railway-hosting",
+      "providerName": "Railway",
+      "serviceId": "hosting"
+    },
+    "railway-hosting-2": {
+      "name": "railway-hosting-2",
+      "providerName": "Railway",
+      "serviceId": "hosting"
+    },
+    "railway-plan": {
+      "name": "railway-plan",
+      "providerName": "Railway",
+      "serviceId": "free"
+    },
     "supabase-project": {
       "name": "supabase-project",
       "providerName": "Supabase",

@@ -8,6 +8,16 @@
     "projectName": "agora"
   },
   "providers": {
+    "openrouter": {
+      "accountRequestId": "facctrq_61UcNnKwVowPYYlsq16UcNYuAiSQgoFjccvxlo1VYF1k",
+      "configuration": {},
+      "linkedAt": "2026-05-03T13:13:35.431Z",
+      "providerId": "prvdr_61URImmFACEuDHEx651IO",
+      "providerName": "OpenRouter",
+      "redirectUrl": null,
+      "requestedAt": "2026-05-03T13:13:35.431Z",
+      "status": "complete"
+    },
     "railway": {
       "accountRequestId": "facctrq_61UcNbdrvzVOrwSPi16UcNYuAiSQgoFjccvxlo1VY8mW",
       "configuration": {},
@@ -30,17 +40,74 @@
     }
   },
   "resources": {
+    "openrouter-api": {
+      "configuration": {},
+      "createdAt": "2026-05-16T16:08:58.076Z",
+      "lastRevealedAt": "2026-05-16T16:08:58.283Z",
+      "lastStatus": "complete",
+      "name": "openrouter-api",
+      "providerId": "prvdr_61URImmFACEuDHEx651IO",
+      "providerName": "OpenRouter",
+      "resourceId": "fres_61Uh8jAGJHYroh2Kk16UcNYuAiSQgoFjccvxlo1VYRHE",
+      "serviceId": "api"
+    },
+    "railway-bucket": {
+      "configuration": {
+        "name": "agora"
+      },
+      "createdAt": "2026-05-16T16:14:10.649Z",
+      "lastRevealedAt": "2026-05-16T16:14:10.926Z",
+      "lastStatus": "complete",
+      "name": "railway-bucket",
+      "providerId": "prvdr_61UK2uWsoydL7tUBp57Fg",
+      "providerName": "Railway",
+      "resourceId": "fres_61Uh8nw6HHoiicMv216UcNYuAiSQgoFjccvxlo1VYUTo",
+      "serviceId": "bucket"
+    },
+    "railway-hosting": {
+      "configuration": {},
+      "createdAt": "2026-05-16T16:12:55.207Z",
+      "lastRevealedAt": "2026-05-16T16:13:01.053Z",
+      "lastStatus": "complete",
+      "name": "railway-hosting",
+      "providerId": "prvdr_61UK2uWsoydL7tUBp57Fg",
+      "providerName": "Railway",
+      "resourceId": "fres_61Uh8mZUOQXjB1BDT16UcNYuAiSQgoFjccvxlo1VYD2m",
+      "serviceId": "hosting"
+    },
+    "railway-hosting-2": {
+      "configuration": {},
+      "createdAt": "2026-05-16T16:11:45.045Z",
+      "lastRevealedAt": null,
+      "lastStatus": "errored",
+      "name": "railway-hosting-2",
+      "providerId": "prvdr_61UK2uWsoydL7tUBp57Fg",
+      "providerName": "Railway",
+      "resourceId": "fres_61Uh8lsNRuwJYuSph16UcNYuAiSQgoFjccvxlo1VYEGm",
+      "serviceId": "hosting"
+    },
+    "railway-plan": {
+      "configuration": {},
+      "createdAt": "2026-05-16T16:11:43.415Z",
+      "lastRevealedAt": "2026-05-16T16:11:43.651Z",
+      "lastStatus": "complete",
+      "name": "railway-plan",
+      "providerId": "prvdr_61UK2uWsoydL7tUBp57Fg",
+      "providerName": "Railway",
+      "resourceId": "fres_61Uh8lqk3jHkdVAUj16UcNYuAiSQgoFjccvxlo1VYFua",
+      "serviceId": "free"
+    },
     "supabase-project": {
       "configuration": {
         "name": "agora"
       },
-      "createdAt": "2026-05-03T13:01:25.131Z",
-      "lastRevealedAt": "2026-05-03T13:01:25.211Z",
+      "createdAt": "2026-05-16T16:08:52.628Z",
+      "lastRevealedAt": "2026-05-16T16:08:52.833Z",
       "lastStatus": "complete",
       "name": "supabase-project",
       "providerId": "prvdr_61UIXYHdsyF69pZbG52n2",
       "providerName": "Supabase",
-      "resourceId": "fres_61UcNbH8XESsjz70q16UcNYuAiSQgoFjccvxlo1VYHp2",
+      "resourceId": "fres_61Uh8ipLjC1X9unIC16UcNYuAiSQgoFjccvxlo1VY3ku",
       "serviceId": "project"
     }
   }

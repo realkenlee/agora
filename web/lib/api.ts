@@ -1,6 +1,6 @@
 import type { Listing, Offer, Message, GeneratedListing } from './types'
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://agora-production-fb42.up.railway.app'
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://agora-production-2bbb.up.railway.app'
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('agora_token') : null

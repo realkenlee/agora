@@ -31,7 +31,7 @@ async def refresh_free_models() -> None:
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.get(
-                "https://openrouter.ai/api/v1/models",
+                f"{_LLM_BASE_URL.rstrip('/')}/models",
                 headers={"Authorization": f"Bearer {_LLM_API_KEY}"},
             )
             models = r.json().get("data", [])

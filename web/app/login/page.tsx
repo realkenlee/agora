@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://agora-production-fb42.up.railway.app'
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://agora-production-2bbb.up.railway.app'
 
 type User = { id: string; display_name: string }
 
