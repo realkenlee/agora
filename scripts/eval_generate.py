@@ -88,10 +88,11 @@ def _category_is(*cats) -> Assertion:
 CASES = [
     {
         "name": "adidas_slides",
-        "description": "Black Adidas slides, size 10, barely worn",
+        # Description intentionally omits brand — vision model must read the 3-stripe logo
+        "description": "Black slides, size 10, barely worn",
         "image": "adidas_slides.jpg",
         "assertions": [
-            _brand_in_title_or_attrs("Adidas", "adidas"),
+            _brand_in_title_or_attrs("Adidas"),
             _title_contains("adidas", "slide", "sandal"),
             _price_in_range(10, 60),
             _category_is("clothing", "sports"),
@@ -99,19 +100,20 @@ CASES = [
     },
     {
         "name": "playmobil_firetruck",
-        "description": "Playmobil Toy Fire Truck with Ladder",
+        # Description intentionally omits brand — vision model must read the logo on the toy/box
+        "description": "Toy fire truck with extending ladder, red, good condition",
         "image": "playmobil_firetruck.jpg",
         "assertions": [
-            _brand_in_title_or_attrs("Playmobil", "playmobil"),
+            _brand_in_title_or_attrs("Playmobil"),
             _title_contains("playmobil", "fire"),
-            _price_in_range(5, 50),
+            _price_in_range(5, 90),  # complete set with box can reach $85
             _category_is("toys"),
         ],
     },
     {
         "name": "vintage_floor_lamp",
         "description": "Vintage arc floor lamp, working, minor scratches on base",
-        "image": None,  # text-only — no fixture needed
+        "image": None,
         "assertions": [
             _price_in_range(20, 200),
             _category_is("furniture", "other"),
@@ -215,7 +217,9 @@ async def run(base: str, only: str | None):
     print(f"Running {len(cases)} case(s)\n{'─' * 50}")
 
     async with httpx.AsyncClient() as client:
-        for case in cases:
+        for i, case in enumerate(cases):
+            if i > 0:
+                await asyncio.sleep(8)  # avoid free-tier rate limit (20 req/min)
             await run_case(client, base, case)
 
 
