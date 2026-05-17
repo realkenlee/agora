@@ -138,6 +138,15 @@ def _extract_brand_candidates(vision_caption: str, search_results: list) -> tupl
         "marketplace", "items", "your", "their", "these", "those", "here",
         "listing", "listings", "seller", "buyer", "deal", "deals", "lot",
         "set", "bundle", "used", "brand", "brands", "type", "style", "version",
+        "happy", "positioned", "fire", "missing", "featured", "popular",
+        "trending", "featured", "sponsored", "related", "similar", "other",
+        "check", "click", "visit", "read", "watch", "follow", "subscribe",
+        "save", "share", "view", "post", "comment", "like", "love", "buy",
+        "sold", "new", "old", "big", "small", "large", "medium", "high", "low",
+        "fast", "slow", "easy", "hard", "long", "short", "wide", "narrow",
+        "hot", "cool", "cold", "warm", "soft", "hard", "light", "heavy",
+        "rare", "common", "special", "limited", "exclusive", "premium",
+        "affordable", "quality", "value", "price", "sale", "discount", "off",
     }
 
     # Per-result word spread (breadth beats frequency — one result mentioning Nike 10x ≠ 4 results)
