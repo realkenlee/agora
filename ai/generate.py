@@ -6,6 +6,7 @@ import os
 import httpx
 from openai import AsyncOpenAI
 
+
 _LLM_BASE_URL  = os.environ.get("LLM_BASE_URL", "https://openrouter.ai/api/v1")
 _LLM_API_KEY   = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("LLM_API_KEY", "")
 _TEXT_MODEL    = os.environ.get("LLM_MODEL", "")
@@ -65,8 +66,9 @@ _CATEGORIES = [
 ]
 
 _GENERATE_SYSTEM = """You are an expert secondhand marketplace listing writer.
-Given a seller's item description plus web research context, write a compelling, accurate listing.
-Use the web research to identify the brand, model, and realistic used market price.
+Given a seller's item description and photo analysis, write a compelling, accurate listing.
+Identify the brand from the photo description — read visible logos, text, and distinctive design cues.
+Use web research to validate the model and find realistic used market prices.
 Attributes should be the 3-5 most relevant facts for this specific item type — not a fixed template.
 For shoes: size, brand, colorway. For furniture: dimensions, material. For electronics: storage, color, generation.
 Return ONLY valid JSON — no prose, no markdown."""
@@ -74,7 +76,6 @@ Return ONLY valid JSON — no prose, no markdown."""
 _GENERATE_PROMPT = """Item description: "{description}"
 {price_hint_line}
 {location_line}
-{brand_line}
 {photo_line}
 {search_line}
 
@@ -97,8 +98,9 @@ def _client() -> AsyncOpenAI:
     return AsyncOpenAI(base_url=_LLM_BASE_URL, api_key=_LLM_API_KEY or "ollama")
 
 
+
 async def _search_context(query: str) -> str:
-    """DuckDuckGo search for brand/price context. Returns snippets or empty string."""
+    """DuckDuckGo search for used price context. Returns snippets or empty string."""
     try:
         from ddgs import DDGS
         loop = asyncio.get_event_loop()
@@ -115,120 +117,20 @@ async def _search_context(query: str) -> str:
         return ""
 
 
-def _extract_brand_candidates(vision_caption: str, search_results: list) -> tuple[list[str], str]:
-    """Score brand confidence from vision + search. Returns (candidates, confidence)."""
-    import re
-    from collections import Counter
-
-    NOISE = {
-        "the", "a", "an", "for", "sale", "used", "new", "best", "review", "reviews",
-        "price", "buy", "shop", "store", "amazon", "ebay", "walmart", "target",
-        "craigslist", "vs", "and", "or", "with", "in", "on", "at", "of", "my",
-        "this", "that", "good", "great", "top", "free", "shipping", "item",
-        "product", "model", "listing", "second", "hand", "cheap", "sell",
-        "resale", "find", "get", "available", "also", "can", "use", "its",
-        "has", "have", "not", "but", "from", "like", "just", "more", "very",
-        "real", "how", "what", "when", "where", "condition", "quality",
-        "original", "genuine", "official", "authentic", "vintage", "classic",
-        "size", "color", "black", "white", "red", "blue", "green", "pink",
-        "selling", "buying", "looking", "includes", "comes", "works",
-        "perfect", "excellent", "mint", "fair", "poor", "image", "photo",
-        "shows", "please", "contact", "message", "offer", "make", "local",
-        "cash", "payment", "delivery", "pickup", "meet", "inch", "inches",
-        "marketplace", "items", "your", "their", "these", "those", "here",
-        "listing", "listings", "seller", "buyer", "deal", "deals", "lot",
-        "set", "bundle", "used", "brand", "brands", "type", "style", "version",
-        "happy", "positioned", "fire", "missing", "featured", "popular",
-        "trending", "featured", "sponsored", "related", "similar", "other",
-        "check", "click", "visit", "read", "watch", "follow", "subscribe",
-        "save", "share", "view", "post", "comment", "like", "love", "buy",
-        "sold", "new", "old", "big", "small", "large", "medium", "high", "low",
-        "fast", "slow", "easy", "hard", "long", "short", "wide", "narrow",
-        "hot", "cool", "cold", "warm", "soft", "hard", "light", "heavy",
-        "rare", "common", "special", "limited", "exclusive", "premium",
-        "affordable", "quality", "value", "price", "sale", "discount", "off",
-    }
-
-    # Per-result word spread (breadth beats frequency — one result mentioning Nike 10x ≠ 4 results)
-    result_appearances: Counter = Counter()
-    for r in search_results:
-        text = f"{r.get('title', '')} {r.get('body', '')}"
-        for w in set(re.findall(r'\b[A-Z][a-z]{2,19}\b', text)):
-            if w.lower() not in NOISE:
-                result_appearances[w] += 1
-
-    vision_words = re.findall(r'\b[A-Z][a-z]{2,19}\b', vision_caption)
-    vision_set = {w for w in vision_words if w.lower() not in NOISE}
-    vision_counter: Counter = Counter(w for w in vision_words if w.lower() not in NOISE)
-
-    n = max(len(search_results), 1)
-    scored: dict[str, float] = {}
-    for word, count in result_appearances.items():
-        if count < 2 and word not in vision_set:
-            continue
-        score = (count / n) * 10
-        if word in vision_set:
-            score += vision_counter.get(word, 0) * 2 + 5
-        scored[word] = score
-
-    # Vision-only strong signals (appears 2+ times in caption but not in search)
-    for word, count in vision_counter.items():
-        if word.lower() not in NOISE and count >= 2 and word not in scored:
-            scored[word] = count * 1.5
-
-    candidates = sorted(scored, key=scored.get, reverse=True)[:5]
-    if not candidates:
-        return [], "NONE"
-
-    top_spread = result_appearances.get(candidates[0], 0)
-    second_spread = result_appearances.get(candidates[1], 0) if len(candidates) > 1 else 0
-
-    if top_spread >= max(2, n * 0.6) and second_spread < top_spread * 0.5:
-        confidence = "HIGH"
-    elif len(candidates) <= 2 or top_spread >= 2:
-        confidence = "MEDIUM"
-    else:
-        confidence = "LOW"
-
-    return candidates, confidence
-
-
-async def analyze_brand(description: str, vision_caption: str) -> tuple[list[str], str]:
-    """Search for brand context and score confidence. Returns (candidates, confidence)."""
-    query = f"{vision_caption[:120]} {description}"[:200] if vision_caption else description
-    try:
-        from ddgs import DDGS
-        loop = asyncio.get_event_loop()
-        results = await loop.run_in_executor(
-            None,
-            lambda: list(DDGS().text(f"{query} brand", max_results=4))
-        )
-    except Exception as e:
-        print(f"[brand_search] failed: {e}")
-        return [], "NONE"
-    if not results:
-        return [], "NONE"
-    return _extract_brand_candidates(vision_caption, results)
-
-
 async def generate_listing_draft(
     description: str,
     price_hint: float | None = None,
     location: str | None = None,
     photo_urls: list[str] | None = None,
-    confirmed_brand: str | None = None,
 ) -> dict:
     photo_captions: list[str] = []
     if photo_urls:
         captions = await _describe_photos(photo_urls)
         photo_captions.extend(captions)
 
-    # Build search query — confirmed brand anchors the query for better price/model results
     search_query = description
     if photo_captions:
         search_query = f"{photo_captions[0][:120]} {description}"[:200]
-    if confirmed_brand:
-        search_query = f"{confirmed_brand} {search_query}"[:200]
 
     search_context = await _search_context(search_query)
 
@@ -236,7 +138,6 @@ async def generate_listing_draft(
         description=description,
         price_hint_line=f"Seller's asking price: ${price_hint}" if price_hint else "",
         location_line=f"Location: {location}" if location else "",
-        brand_line=f"Brand (confirmed by seller — use this exactly, do not guess otherwise): {confirmed_brand}" if confirmed_brand else "",
         photo_line=f"Photo shows: {'; '.join(photo_captions)}" if photo_captions else "",
         search_line=f"Web research:\n{search_context}" if search_context else "",
         categories=", ".join(_CATEGORIES),

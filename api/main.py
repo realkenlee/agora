@@ -41,7 +41,7 @@ from api.models import (
     UserSummary, Location,
 )
 from ai import generate
-from ai.generate import generate_listing_draft, analyze_photos, analyze_brand
+from ai.generate import generate_listing_draft, analyze_photos
 from ai.embed import embed_text
 from ai.moderate import moderate_listing
 
@@ -703,11 +703,11 @@ async def _check_caps(user_id):
                  resets_at=f"{next_month.year}-{next_month.month + 1:02d}-01")
 
 
-async def _generate_draft_background(draft_id, user_id, photo_urls, description, price_hint, location_text, confirmed_brand=None):
+async def _generate_draft_background(draft_id, user_id, photo_urls, description, price_hint, location_text):
     print(f"[generate] starting draft {draft_id} for user {user_id}")
     try:
         await asyncio.wait_for(
-            _do_generate(draft_id, user_id, photo_urls, description, price_hint, location_text, confirmed_brand),
+            _do_generate(draft_id, user_id, photo_urls, description, price_hint, location_text),
             timeout=240,
         )
         print(f"[generate] done draft {draft_id}")
@@ -730,7 +730,7 @@ async def _generate_draft_background(draft_id, user_id, photo_urls, description,
                 "Sorry, it's taking too long to generate your listing. Please try again.")
 
 
-async def _do_generate(draft_id, user_id, photo_urls, description, price_hint, location_text, confirmed_brand=None):
+async def _do_generate(draft_id, user_id, photo_urls, description, price_hint, location_text):
     try:
         print(f"[generate] calling LLM for draft {draft_id}")
         draft_data = await generate_listing_draft(
@@ -738,7 +738,6 @@ async def _do_generate(draft_id, user_id, photo_urls, description, price_hint, l
             price_hint=price_hint,
             location=location_text,
             photo_urls=photo_urls,
-            confirmed_brand=confirmed_brand,
         )
         draft_data["photo_urls"] = photo_urls or []
         await db.execute(
@@ -827,9 +826,9 @@ async def generate_listing(body: GenerateListingRequest, authorization: Optional
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
     """
-    Telegram Bot webhook. Seller sends photo + caption → brand confidence check → listing.
-    Brand ladder: HIGH = proceed silently, MEDIUM/LOW = ask seller to confirm, NONE = ask brand.
-    Reply YES to publish, NO to cancel. Numeric reply or text to confirm brand.
+    Telegram Bot webhook. Photo + caption → vision analysis → listing generation.
+    Reply YES to publish, NO to cancel.
+    Reply ACCEPT or DECLINE to respond to the latest pending offer.
     """
     data = await request.json()
     msg = data.get("message") or data.get("edited_message")
@@ -838,7 +837,7 @@ async def telegram_webhook(request: Request):
 
     chat_id: int = msg["chat"]["id"]
     text: str = (msg.get("text") or msg.get("caption") or "").strip()
-    photos = msg.get("photo")  # list of sizes, largest last
+    photos = msg.get("photo")
 
     async def reply(t: str) -> None:
         await send_telegram(chat_id, t)
@@ -863,7 +862,7 @@ async def telegram_webhook(request: Request):
 
     user_id = tg_row["user_id"]
 
-    # ── YES / NO (for ready drafts) ────────────────────────────────────────────
+    # ── YES / NO (publish or cancel ready draft) ───────────────────────────────
     if text.upper() in ("YES", "Y", "PUBLISH"):
         draft = await db.fetchrow(
             "SELECT id FROM listing_drafts WHERE user_id=$1 AND status='ready' AND telegram_chat_id=$2 "
@@ -881,12 +880,13 @@ async def telegram_webhook(request: Request):
     if text.upper() in ("NO", "N", "CANCEL"):
         await db.execute(
             "UPDATE listing_drafts SET status='failed', error='Cancelled by seller', updated_at=NOW() "
-            "WHERE user_id=$1 AND status IN ('ready','awaiting_brand') AND telegram_chat_id=$2",
+            "WHERE user_id=$1 AND status='ready' AND telegram_chat_id=$2",
             user_id, chat_id,
         )
         await reply("Listing cancelled. Send me a photo when you're ready to sell something.")
         return {"ok": True}
 
+    # ── ACCEPT / DECLINE (offer responses) ─────────────────────────────────────
     if text.upper() in ("ACCEPT",):
         offer = await db.fetchrow(
             "SELECT o.*, l.title FROM offers o JOIN listings l ON l.id=o.listing_id "
@@ -925,61 +925,7 @@ async def telegram_webhook(request: Request):
         await reply(f'Offer declined. "{offer["title"]}" is back to active.')
         return {"ok": True}
 
-    # ── Brand reply (if awaiting_brand draft exists and no photo in message) ───
-    if not photos:
-        awaiting = await db.fetchrow(
-            "SELECT id, brand_candidates, description, price_hint, photo_urls "
-            "FROM listing_drafts WHERE user_id=$1 AND status='awaiting_brand' AND telegram_chat_id=$2 "
-            "ORDER BY created_at DESC LIMIT 1",
-            user_id, chat_id,
-        )
-        if awaiting:
-            candidates = awaiting["brand_candidates"] or []
-            if isinstance(candidates, str):
-                candidates = json.loads(candidates)
-
-            t = text.strip()
-            if not t:
-                await reply("Please reply with a number, the brand name, or SKIP")
-                return {"ok": True}
-
-            if t.isdigit():
-                idx = int(t) - 1
-                if 0 <= idx < len(candidates):
-                    confirmed_brand: str | None = candidates[idx]
-                else:
-                    await reply(f"Please reply 1–{len(candidates)}, type the brand name, or SKIP")
-                    return {"ok": True}
-            elif t.upper() == "SKIP":
-                confirmed_brand = None
-            else:
-                confirmed_brand = t  # treat message as brand override
-
-            stored_urls = awaiting["photo_urls"] or []
-            if isinstance(stored_urls, str):
-                stored_urls = json.loads(stored_urls)
-
-            await db.execute(
-                "UPDATE listing_drafts SET status='processing', confirmed_brand=$1 WHERE id=$2",
-                confirmed_brand, awaiting["id"],
-            )
-
-            brand_msg = f"Got it — using {confirmed_brand}! " if confirmed_brand else "OK, I'll figure it out! "
-            await reply(f"{brand_msg}Writing your listing now — I'll message you in ~1 minute.")
-
-            asyncio.create_task(_generate_draft_background(
-                awaiting["id"], user_id,
-                stored_urls,
-                awaiting["description"],
-                awaiting["price_hint"],
-                None,
-                confirmed_brand=confirmed_brand,
-            ))
-            return {"ok": True}
-
-    # ── New listing ────────────────────────────────────────────────────────────
-
-    # Download photo if present
+    # ── New listing: photo required ────────────────────────────────────────────
     photo_bytes: bytes | None = None
     if photos and _TG_TOKEN:
         largest = photos[-1]["file_id"]
@@ -1004,56 +950,29 @@ async def telegram_webhook(request: Request):
 
     description = text or "Item for sale"
 
-    # Upload to storage immediately
+    # Upload photo and run vision analysis — brand is inferred from the photo by the LLM
     photo_url: str | None = None
-    photo_b64s: list[str] = []
     if photo_bytes:
         photo_url = await upload_photo(photo_bytes)
-        photo_b64s = [base64.b64encode(photo_bytes).decode()]
-
-    photo_urls_list = [photo_url] if photo_url else []
-
-    # Vision analysis — enrich description so brand search is more accurate
-    vision_caption = ""
-    if photo_b64s:
         try:
-            vision_caption = await analyze_photos(photo_b64s)
-            description = f"{text}\n\nPhotos show: {vision_caption}" if text else f"Photos show: {vision_caption}"
+            b64 = base64.b64encode(photo_bytes).decode()
+            caption = await analyze_photos([b64])
+            description = f"{text}\n\nPhoto shows: {caption}" if text else f"Photo shows: {caption}"
         except Exception:
             pass
 
-    # Brand confidence analysis
-    candidates, confidence = await analyze_brand(description, vision_caption)
-    print(f"[brand] confidence={confidence} candidates={candidates[:3]}")
+    photo_urls_list = [photo_url] if photo_url else []
 
-    if confidence == "HIGH":
-        confirmed_brand = candidates[0]
-        draft_id = await db.fetchval(
-            """INSERT INTO listing_drafts
-                 (user_id, status, description, telegram_chat_id, photo_urls, confirmed_brand)
-               VALUES ($1,'processing',$2,$3,$4,$5) RETURNING id""",
-            user_id, description, chat_id, json.dumps(photo_urls_list), confirmed_brand,
-        )
-        asyncio.create_task(_generate_draft_background(
-            draft_id, user_id, photo_urls_list, description, None, None,
-            confirmed_brand=confirmed_brand,
-        ))
-        await reply(f"Got it — I see this is a {confirmed_brand} item. Writing your listing now, I'll message you in ~1 minute.")
-    else:
-        draft_id = await db.fetchval(
-            """INSERT INTO listing_drafts
-                 (user_id, status, description, telegram_chat_id, photo_urls, brand_candidates)
-               VALUES ($1,'awaiting_brand',$2,$3,$4,$5) RETURNING id""",
-            user_id, description, chat_id,
-            json.dumps(photo_urls_list), json.dumps(candidates),
-        )
-        if candidates and confidence == "HIGH":
-            options = "\n".join(f"{i+1}. {b}" for i, b in enumerate(candidates))
-            msg = f"I think this might be one of these brands:\n{options}\n\nReply 1–{len(candidates)} to confirm, type the brand name, or SKIP to let me decide."
-        else:
-            msg = "What brand is this? Type the name (e.g. Nike, Apple) or SKIP to let me figure it out."
-        await reply(msg)
-
+    draft_id = await db.fetchval(
+        """INSERT INTO listing_drafts
+             (user_id, status, description, telegram_chat_id, photo_urls)
+           VALUES ($1,'processing',$2,$3,$4) RETURNING id""",
+        user_id, description, chat_id, json.dumps(photo_urls_list),
+    )
+    asyncio.create_task(_generate_draft_background(
+        draft_id, user_id, photo_urls_list, description, None, None,
+    ))
+    await reply("Got it! Writing your listing now — I'll message you in about a minute.")
     return {"ok": True}
 
 
