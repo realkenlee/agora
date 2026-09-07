@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from api.sales import (
+from api.sale_state import (
     InvalidSaleTransition,
     SALE_STATUSES,
     SaleError,
