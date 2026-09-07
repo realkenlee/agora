@@ -227,3 +227,46 @@ CREATE TABLE IF NOT EXISTS ai_usage_log (
     user_id UUID REFERENCES users(id),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ── Close-tool sales (hold → ship → release) ─────────────────────────────────
+-- Seller inventory + one Checkout pay link. Not a buyer browse feed.
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_account_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_payouts_enabled BOOLEAN DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_details_submitted BOOLEAN DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS sales (
+    id                       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    listing_id               UUID NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+    seller_id                UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    -- draft → listed → paid_held → shipped → released
+    -- cancelled at listed/paid_held; disputed freezes payout (stub)
+    status                   TEXT NOT NULL DEFAULT 'listed'
+                             CHECK (status IN (
+                                 'draft','listed','paid_held','shipped',
+                                 'released','cancelled','disputed'
+                             )),
+    amount_cents             INT NOT NULL CHECK (amount_cents > 0),
+    currency                 TEXT NOT NULL DEFAULT 'usd',
+    stripe_session_id        TEXT,
+    stripe_payment_intent_id TEXT,
+    stripe_charge_id         TEXT,
+    stripe_transfer_id       TEXT,
+    connect_account_id       TEXT,
+    checkout_url             TEXT,
+    transfer_group           TEXT,
+    shipped_at               TIMESTAMPTZ,
+    released_at              TIMESTAMPTZ,
+    cancelled_at             TIMESTAMPTZ,
+    created_at               TIMESTAMPTZ DEFAULT NOW(),
+    updated_at               TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sales_seller  ON sales(seller_id, status);
+CREATE INDEX IF NOT EXISTS idx_sales_listing ON sales(listing_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sales_session ON sales(stripe_session_id);
+CREATE INDEX IF NOT EXISTS idx_sales_pi      ON sales(stripe_payment_intent_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_open_listing
+    ON sales(listing_id)
+    WHERE status NOT IN ('cancelled', 'released', 'disputed');
+

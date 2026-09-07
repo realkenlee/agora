@@ -6,12 +6,14 @@ Fast keyword pre-check first, then LLM for ambiguous cases.
 
 from __future__ import annotations
 import json
-import os
 from openai import AsyncOpenAI
 
-_LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://openrouter.ai/api/v1")
-_LLM_API_KEY  = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("LLM_API_KEY", "")
-_TEXT_MODEL   = os.environ.get("LLM_MODEL", "meta-llama/llama-3.2-3b-instruct:free")
+from ai.config import llm_settings, using_paid_llm
+
+_settings = llm_settings()
+_LLM_BASE_URL = _settings["base_url"]
+_LLM_API_KEY  = _settings["api_key"]
+_TEXT_MODEL   = _settings["model"] or "meta-llama/llama-3.2-3b-instruct:free"
 
 _FALLBACKS = [
     "meta-llama/llama-3.2-3b-instruct:free",
@@ -69,7 +71,8 @@ async def moderate_listing(title: str, description: str, category: str | None) -
             category=category or "unspecified", prohibited=_PROHIBITED,
         )},
     ]
-    for model in [_TEXT_MODEL] + _FALLBACKS:
+    models = [_TEXT_MODEL] if using_paid_llm() else [_TEXT_MODEL] + _FALLBACKS
+    for model in models:
         try:
             response = await _client().chat.completions.create(
                 model=model, messages=messages, temperature=0.1, max_tokens=256,

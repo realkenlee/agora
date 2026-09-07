@@ -1,7 +1,8 @@
 """
-Agora Marketplace MCP Server
+Agora Close-Tool MCP Server
 
-Exposes the marketplace as a set of tools any MCP-compatible AI can call.
+Seller inventory + Checkout pay link + ship/release.
+Buyer-browse tools remain for compatibility but are not the product.
 Claude users get a marketplace client just by adding this to their config.
 
 Claude Desktop config (~/.claude/claude_desktop_config.json):
@@ -219,6 +220,99 @@ async def list_tools() -> list[types.Tool]:
             },
         ),
 
+        types.Tool(
+            name="list_my_items",
+            description=(
+                "List YOUR inventory items with pay-link and sale status "
+                "(listed | paid_held | shipped | released). "
+                "This is the seller close-tool, not a buyer browse feed."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "Filter by sale status, or 'all'",
+                        "default": "all",
+                    },
+                },
+            },
+        ),
+
+        types.Tool(
+            name="create_item",
+            description=(
+                "Create a seller inventory item from photo URLs + title/price. "
+                "Optionally mints a Stripe Checkout pay link immediately. "
+                "min_price is a private floor. Buyer never browses — they only get the pay link."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["title", "price"],
+                "properties": {
+                    "title":       {"type": "string"},
+                    "description": {"type": "string"},
+                    "price":       {"type": "number", "description": "Asking price in USD"},
+                    "min_price":   {"type": "number", "description": "Private floor price"},
+                    "photo_urls":  {"type": "array", "items": {"type": "string"}},
+                    "condition":   {"type": "string", "enum": ["new","like_new","good","fair","poor"]},
+                    "category_id": {"type": "string", "default": "other"},
+                    "mint_pay_link": {"type": "boolean", "default": True},
+                },
+            },
+        ),
+
+        types.Tool(
+            name="mint_pay_link",
+            description="Mint (or refresh) the one shareable Stripe Checkout URL for an item you own.",
+            inputSchema={
+                "type": "object",
+                "required": ["listing_id"],
+                "properties": {
+                    "listing_id": {"type": "string"},
+                },
+            },
+        ),
+
+        types.Tool(
+            name="mark_shipped",
+            description=(
+                "Confirm you shipped a paid item. Releases held funds to your Connect Express "
+                "account. If onboarding is incomplete, returns an onboarding_url — open it, then retry."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["listing_id"],
+                "properties": {
+                    "listing_id": {"type": "string"},
+                },
+            },
+        ),
+
+        types.Tool(
+            name="get_sale_status",
+            description="Get sale status for one of your items (hold / shipped / released).",
+            inputSchema={
+                "type": "object",
+                "required": ["listing_id"],
+                "properties": {
+                    "listing_id": {"type": "string"},
+                },
+            },
+        ),
+
+        types.Tool(
+            name="get_connect_status",
+            description="Stripe Connect Express payout status. Required only when a sale is about to clear.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+
+        types.Tool(
+            name="start_connect_onboarding",
+            description="Create a Stripe Express onboarding URL for payouts. Only needed before mark_shipped.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+
     ]
 
 
@@ -316,6 +410,50 @@ async def _dispatch(client: httpx.AsyncClient, name: str, args: dict) -> Any:
 
         case "get_my_offers":
             r = await client.get("/me/offers", params=args)
+            r.raise_for_status()
+            return r.json()
+
+        case "list_my_items":
+            r = await client.get("/me/items", params={"status": args.get("status", "all")})
+            r.raise_for_status()
+            return r.json()
+
+        case "create_item":
+            r = await client.post("/me/items", json={
+                "title": args["title"],
+                "description": args.get("description"),
+                "price": args["price"],
+                "min_price": args.get("min_price"),
+                "photo_urls": args.get("photo_urls", []),
+                "condition": args.get("condition", "good"),
+                "category_id": args.get("category_id", "other"),
+                "mint_pay_link": args.get("mint_pay_link", True),
+            })
+            r.raise_for_status()
+            return r.json()
+
+        case "mint_pay_link":
+            r = await client.post(f"/me/items/{args['listing_id']}/pay-link")
+            r.raise_for_status()
+            return r.json()
+
+        case "mark_shipped":
+            r = await client.post(f"/me/items/{args['listing_id']}/ship")
+            r.raise_for_status()
+            return r.json()
+
+        case "get_sale_status":
+            r = await client.get(f"/me/items/{args['listing_id']}")
+            r.raise_for_status()
+            return r.json()
+
+        case "get_connect_status":
+            r = await client.get("/me/connect")
+            r.raise_for_status()
+            return r.json()
+
+        case "start_connect_onboarding":
+            r = await client.post("/me/connect/onboard")
             r.raise_for_status()
             return r.json()
 

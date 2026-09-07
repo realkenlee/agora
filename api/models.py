@@ -232,3 +232,24 @@ class NotificationResponse(BaseModel):
     payload:     dict
     read_at:     Optional[datetime] = None
     created_at:  datetime
+
+
+# ── Close-tool (seller inventory + pay link) ──────────────────────────────────
+
+class CreateItemRequest(BaseModel):
+    """Seller inventory item. Not a browse-feed listing."""
+    title:       str = Field(..., min_length=3, max_length=200)
+    description: Optional[str] = None
+    price:       Decimal = Field(..., gt=0)
+    min_price:   Optional[Decimal] = None  # private floor
+    photo_urls:  list[str] = []
+    condition:   Condition = Condition.good
+    category_id: str = "other"
+    mint_pay_link: bool = True
+
+
+class ConnectOnboardResponse(BaseModel):
+    account_id:      Optional[str] = None
+    onboarding_url:  Optional[str] = None
+    required_for:    str = "payout"
+    note:            Optional[str] = None

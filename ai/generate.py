@@ -2,15 +2,17 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-import os
 import httpx
 from openai import AsyncOpenAI
 
+from ai.config import llm_settings, using_paid_llm
 
-_LLM_BASE_URL  = os.environ.get("LLM_BASE_URL", "https://openrouter.ai/api/v1")
-_LLM_API_KEY   = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("LLM_API_KEY", "")
-_TEXT_MODEL    = os.environ.get("LLM_MODEL", "")
-_VISION_MODEL  = os.environ.get("VISION_MODEL", "")
+
+_settings = llm_settings()
+_LLM_BASE_URL  = _settings["base_url"]
+_LLM_API_KEY   = _settings["api_key"]
+_TEXT_MODEL    = _settings["model"]
+_VISION_MODEL  = _settings["vision_model"]
 
 # Seed fallbacks — refreshed dynamically at startup via refresh_free_models()
 _TEXT_FALLBACKS: list[str] = [
@@ -25,8 +27,18 @@ _VISION_FALLBACKS: list[str] = [
 
 
 async def refresh_free_models() -> None:
-    """Query OpenRouter for currently available free models and update the lists."""
+    """Query OpenRouter for currently available free models and update the lists.
+
+    Skipped when paid LLM_* env is set — free :free models cap at 50/day
+    and will sink drafts if the agent keeps using them.
+    """
     global _TEXT_MODEL, _VISION_MODEL, _TEXT_FALLBACKS, _VISION_FALLBACKS
+    if using_paid_llm():
+        print(
+            f"[models] paid LLM configured base={_LLM_BASE_URL} "
+            f"text={_TEXT_MODEL or '(provider default)'} vision={_VISION_MODEL or '(none)'}"
+        )
+        return
     if not _LLM_API_KEY or "openrouter" not in _LLM_BASE_URL:
         return
     try:
@@ -146,7 +158,15 @@ async def generate_listing_draft(
 
     from openai import APIStatusError, APITimeoutError
     last_err = None
-    models_to_try = [m for m in ([_TEXT_MODEL] + _TEXT_FALLBACKS) if m]
+    if using_paid_llm():
+        models_to_try = [m for m in [_TEXT_MODEL] if m]
+        if not models_to_try:
+            raise ValueError(
+                "Paid LLM_* is configured but LLM_MODEL is empty. "
+                "Set LLM_MODEL (and VISION_MODEL) — do not fall back to OpenRouter :free."
+            )
+    else:
+        models_to_try = [m for m in ([_TEXT_MODEL] + _TEXT_FALLBACKS) if m]
     for model in models_to_try:
         try:
             response = await _client().chat.completions.create(
@@ -194,6 +214,11 @@ async def analyze_photos(base64_images: list[str]) -> str:
     """Describe marketplace item photos using vision model."""
     if not base64_images:
         return ""
+    if not _VISION_MODEL:
+        raise ValueError(
+            "VISION_MODEL is not set. Free OpenRouter vision models cap at 50/day; "
+            "set VISION_MODEL on a paid LLM_* provider."
+        )
     content = []
     for b64 in base64_images[:4]:
         content.append({
