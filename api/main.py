@@ -38,8 +38,9 @@ from api.models import (
     SendMessageRequest, MessageResponse,
     GenerateListingRequest, GenerateListingResponse,
     GenerateJobResponse, DraftResponse, NotificationResponse,
-    UserSummary, Location,
+    UserSummary, Location, CreateItemRequest,
 )
+from api import sales
 from ai import generate
 from ai.generate import generate_listing_draft, analyze_photos
 from ai.embed import embed_text
@@ -148,6 +149,18 @@ async def send_telegram(chat_id: int, text: str) -> None:
         )
 
 
+async def _telegram_pay_link(listing, user_id) -> str | None:
+    """Best-effort Checkout URL after Telegram auto-publish. Never breaks the listing path."""
+    if not sales.stripe_configured():
+        return None
+    try:
+        row = await sales.mint_pay_link(listing["id"], user_id)
+        return row["checkout_url"]
+    except Exception as e:
+        print(f"[telegram] pay link skipped: {e}")
+        return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.init_pool()
@@ -200,14 +213,19 @@ async def lifespan(app: FastAPI):
             created_at TIMESTAMPTZ DEFAULT NOW()
         )"""
     )
+    await sales.ensure_schema()
     yield
     await db.close_pool()
 
 
 app = FastAPI(
-    title="Agora Marketplace API",
-    description="Agent-native local marketplace. Buy, sell, negotiate — human or AI.",
-    version="0.2.0",
+    title="Agora Close-Tool API",
+    description=(
+        "Seller inventory + Stripe Checkout pay link. "
+        "Buyer never browses — they open one Checkout URL. "
+        "Hold → ship → release via Connect."
+    ),
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -228,6 +246,10 @@ def _err(status: int, code: str, detail: str, **context):
         "detail": detail,
         "context": context,
     })
+
+
+def _raise_sale(e: sales.SaleError):
+    _err(e.status, e.code, e.detail, **e.context)
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -281,7 +303,14 @@ async def _resolve_token(token: str) -> Optional[dict]:
 
 @app.get("/")
 async def health():
-    return {"status": "ok", "service": "agora-marketplace", "version": "0.2.0"}
+    return {
+        "status": "ok",
+        "service": "agora-close",
+        "version": "0.3.0",
+        "product": "close-tool",
+        "stripe_configured": sales.stripe_configured(),
+        "llm": sales.llm_public_status(),
+    }
 
 
 @app.get("/photos/{path:path}")
@@ -715,6 +744,127 @@ async def my_offers(direction: str = "all", caller=Depends(current_user)):
     return [await _offer_response(r, caller["user_id"]) for r in rows]
 
 
+# ── Close-tool: seller inventory + pay link (not a browse feed) ───────────────
+
+@app.get("/me/items")
+async def my_items(status: str = "all", caller=Depends(current_user)):
+    """Seller inventory with pay-link + sale status. Buyers do not call this."""
+    return await sales.list_items(caller["user_id"], status=status)
+
+
+@app.post("/me/items", status_code=201)
+async def create_item(body: CreateItemRequest, caller=Depends(current_user)):
+    if not caller["can_list"]:
+        _err(403, "PERMISSION_DENIED", "Agent session does not have listing permission")
+    try:
+        return await sales.create_item(
+            seller_id=caller["user_id"],
+            title=body.title,
+            description=body.description or "",
+            price=body.price,
+            min_price=body.min_price,
+            photo_urls=body.photo_urls,
+            condition=body.condition.value,
+            category_id=body.category_id,
+            listed_by="agent" if caller["is_agent"] else "human",
+            auto_pay_link=body.mint_pay_link,
+        )
+    except sales.SaleError as e:
+        _raise_sale(e)
+
+
+@app.get("/me/items/{listing_id}")
+async def get_item(listing_id: UUID, caller=Depends(current_user)):
+    try:
+        return await sales.get_item(listing_id, caller["user_id"])
+    except sales.SaleError as e:
+        _raise_sale(e)
+
+
+@app.post("/me/items/{listing_id}/pay-link")
+async def mint_pay_link(listing_id: UUID, caller=Depends(current_user)):
+    """Mint (or refresh) the one shareable Stripe Checkout URL for this item."""
+    try:
+        row = await sales.mint_pay_link(listing_id, caller["user_id"])
+        return sales.sale_public(row)
+    except sales.SaleError as e:
+        _raise_sale(e)
+
+
+@app.post("/me/items/{listing_id}/ship")
+async def mark_item_shipped(listing_id: UUID, caller=Depends(current_user)):
+    """Buyer paid (funds held). Seller confirms ship → Transfer to Connect."""
+    try:
+        return await sales.mark_shipped(listing_id, caller["user_id"])
+    except sales.SaleError as e:
+        _raise_sale(e)
+
+
+@app.post("/me/items/{listing_id}/cancel")
+async def cancel_item(listing_id: UUID, caller=Depends(current_user)):
+    try:
+        return await sales.cancel_item(listing_id, caller["user_id"])
+    except sales.SaleError as e:
+        _raise_sale(e)
+
+
+@app.get("/sales/{sale_id}")
+async def get_sale(sale_id: UUID, caller=Depends(current_user)):
+    row = await sales._sale_row(sale_id)
+    if not row:
+        _err(404, "SALE_NOT_FOUND", "No sale with that ID")
+    if str(row["seller_id"]) != str(caller["user_id"]):
+        _err(403, "NOT_YOUR_SALE", "Only the seller can view this sale")
+    listing = await db.fetchrow("SELECT * FROM listings WHERE id=$1", row["listing_id"])
+    photos = await sales._photos(row["listing_id"]) if listing else []
+    return sales.sale_public(row, listing=dict(listing) if listing else None, photos=photos)
+
+
+@app.get("/me/connect")
+async def my_connect(caller=Depends(current_user)):
+    return await sales.connect_status(caller["user_id"])
+
+
+@app.post("/me/connect/onboard")
+async def start_connect_onboard(caller=Depends(current_user)):
+    """Connect Express onboarding — required at payout, not at list time."""
+    try:
+        return await sales.start_onboarding(caller["user_id"])
+    except sales.SaleError as e:
+        _raise_sale(e)
+
+
+@app.get("/connect/refresh")
+async def connect_refresh(authorization: Optional[str] = Header(None)):
+    """Stripe Account Link refresh_url. Agents should call POST /me/connect/onboard instead."""
+    return {
+        "ok": True,
+        "action": "reauth",
+        "detail": "Account link expired. Authenticate and POST /me/connect/onboard for a fresh URL.",
+    }
+
+
+@app.get("/connect/return")
+async def connect_return():
+    return {
+        "ok": True,
+        "detail": "Onboarding flow exited. Check GET /me/connect, then mark the sale shipped to release funds.",
+    }
+
+
+@app.post("/webhooks/stripe")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    try:
+        event = sales.construct_webhook_event(payload, sig)
+    except sales.SaleError as e:
+        _raise_sale(e)
+    except Exception as e:
+        _err(400, "STRIPE_WEBHOOK_INVALID", str(e)[:200])
+    return await sales.handle_webhook(event)
+
+
 # ── AI / Drafts ───────────────────────────────────────────────────────────────
 
 _AI_DAILY_CAP    = int(os.environ.get("AI_DAILY_CAP", "200"))
@@ -826,7 +976,16 @@ async def _do_generate(draft_id, user_id, photo_urls, description, price_hint, l
             listing = await _publish_draft_internal(draft_id, user_id)
             if listing:
                 url = f"{_WEB_URL}/listings/{listing['id']}"
-                await send_telegram(chat_id, url)
+                pay = await _telegram_pay_link(listing, user_id)
+                if pay:
+                    await send_telegram(
+                        chat_id,
+                        f"{url}\n\nPay link (share this — buyer does not browse):\n{pay}\n\n"
+                        "Reply SHIPPED after you send the item to release funds.\n"
+                        "Reply CONNECT if you have not set up payouts yet.",
+                    )
+                else:
+                    await send_telegram(chat_id, url)
     except Exception as e:
         print(f"[generate] ERROR draft {draft_id}: {type(e).__name__}: {e}")
         await db.execute(
@@ -922,6 +1081,47 @@ async def telegram_webhook(request: Request):
         return {"ok": True}
 
     user_id = tg_row["user_id"]
+
+    # ── CONNECT — Stripe Express onboarding (required at payout) ──────────────
+    if text.upper() in ("CONNECT", "PAYOUT"):
+        try:
+            onboard = await sales.start_onboarding(user_id)
+            await reply(
+                "Stripe payout setup (needed when you mark an item shipped):\n"
+                f"{onboard['onboarding_url']}\n\n"
+                "Open that link once, then reply SHIPPED after the buyer pays and you send the item."
+            )
+        except sales.SaleError as e:
+            await reply(e.detail)
+        except Exception:
+            await reply("Stripe isn't configured on this server, so payouts can't start yet.")
+        return {"ok": True}
+
+    # ── SHIPPED — release held funds to Connect ───────────────────────────────
+    if text.upper() in ("SHIPPED", "SHIP"):
+        sale = await db.fetchrow(
+            """SELECT s.*, l.title FROM sales s JOIN listings l ON l.id=s.listing_id
+               WHERE s.seller_id=$1 AND s.status IN ('paid_held','shipped')
+               ORDER BY s.updated_at DESC LIMIT 1""",
+            user_id,
+        )
+        if not sale:
+            await reply("No paid sale waiting to ship. Share a pay link first, then reply SHIPPED after you send it.")
+            return {"ok": True}
+        try:
+            item = await sales.mark_shipped(sale["listing_id"], user_id)
+            st = (item.get("sale") or {}).get("status")
+            if st == "released":
+                await reply(f'Released: "${item["title"]}" — funds are on the way to your Stripe account.')
+            else:
+                await reply(f'Updated "{item["title"]}" — status {st}.')
+        except sales.SaleError as e:
+            url = (e.context or {}).get("onboarding_url")
+            if url:
+                await reply(f"{e.detail}\n\nFinish payout setup:\n{url}")
+            else:
+                await reply(e.detail)
+        return {"ok": True}
 
     # ── UNDO — take down the most recently published listing ──────────────────
     if text.upper() == "UNDO":
